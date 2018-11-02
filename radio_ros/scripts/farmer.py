@@ -11,7 +11,7 @@ def music_callback(msg):
     print("")
 
 if __name__ == '__main__':
-    rospy.init_node('laser_subsriber_node')
+    rospy.init_node('farmer_node')
     
     rospy.Subscriber('weather', String, weather_callback)
     rospy.Subscriber('music', Music, music_callback)

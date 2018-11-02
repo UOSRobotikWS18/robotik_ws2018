@@ -12,7 +12,7 @@ def music_callback(msg):
     feedback_pub.publish("I don't like %s" % msg.artist)
 
 if __name__ == '__main__':
-    rospy.init_node('laser_subsriber_node')
+    rospy.init_node('trucker_node')
     
     feedback_pub = rospy.Publisher('feedback', String, queue_size=10)
     rospy.Subscriber('traffic', String, traffic_callback)
