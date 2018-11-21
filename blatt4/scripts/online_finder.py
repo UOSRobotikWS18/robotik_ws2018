@@ -70,6 +70,7 @@ class LineFinder:
         marker = Marker()
         marker.header = cloud.header
         marker.id = 0
+        marker.ns = 'lines'
         marker.action = marker.ADD
         marker.type = marker.LINE_STRIP
         marker.color.r, marker.color.a = 1, 1
@@ -81,6 +82,8 @@ class LineFinder:
 
         points = [Point(p[0],p[1],p[2]) for p in point_generator]
 
+        marker_id = 0
+
         for i in range(len(points)-1):
             if self.__valid_end_of_line(points, end) and \
                     self.__valid_sum(points, start, end) and \
@@ -89,6 +92,7 @@ class LineFinder:
             else:
                 start_point = points[start]
                 end_point = points[end]
+
                 if start_point is not end_point and len(points[start:end]) > self.min_line_points:
                     marker.points.append(start_point)
                     marker.points.append(end_point)
@@ -96,6 +100,23 @@ class LineFinder:
                 end = start + 1
 
         self.pub.publish(marker)
+
+        for i,point in enumerate(marker.points):
+            self.pub.publish(self.__gen_point_marker(cloud.header, point, i))
+
+    def __gen_point_marker(self, header, point, id):
+        marker = Marker()
+        marker.header = header
+        marker.id = id
+        marker.ns = 'points'
+        marker.action = marker.ADD
+        marker.type = marker.SPHERE
+        marker.color.g, marker.color.a = 1, 1
+        marker.scale.x = .1
+        marker.scale.y = .1
+        marker.scale.z = .1
+        marker.pose.position = point
+        return marker
 
 
 def node():
