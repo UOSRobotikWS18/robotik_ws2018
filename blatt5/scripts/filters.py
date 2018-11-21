@@ -29,7 +29,7 @@ class image_filter:
         gray = cv2.cvtColor(cv_image, cv2.COLOR_BGR2GRAY)
 
         # filter image
-        gray2 = self.shift(gray)
+        gray2 = self.gauss(gray, kernel_size=17, sigma=0.1)
 
         # convert back to bgr
         cv_image = cv2.cvtColor(gray2, cv2.COLOR_GRAY2BGR)
@@ -51,6 +51,36 @@ class image_filter:
         # result[:,30:] = img[:,:-30]
 
         return result
+
+    def gauss(self, img, kernel_size=5, sigma=0.1):
+        kernel = self.generate_gauss_kernel(kernel_size)
+        result = cv2.filter2D(img,-1,kernel)
+
+        return result
+
+
+    def generate_gauss_kernel(self, size, sigma=0.1):
+
+        kernel = np.zeros((size,size))
+        center = int( (size-1) / 2)
+
+        for i in range(size):
+            for j in range(size):
+                x = i-center
+                y = j-center
+                value = self.gauss_func(x,y,sigma)
+                kernel[i,j] = value
+
+        # normalize kernel
+        kernel /= np.sum(kernel)
+        return kernel
+        
+                
+    def gauss_func(self, x, y, sigma=1.0):
+        # https://de.wikipedia.org/wiki/Gau%C3%9F-Filter
+        return 1.0 / (2.0 * np.pi * sigma**2.0) * np.exp(- (x**2.0 + y**2.0) / 2*sigma**2.0 )
+
+
 
 def main(args):
     rospy.init_node('image_filter_node')
