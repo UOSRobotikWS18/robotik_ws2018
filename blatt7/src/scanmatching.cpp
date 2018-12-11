@@ -1,3 +1,4 @@
+//    point_correspondences.push_back (CorrPair (*scan_it, *best_it));
 // @author: Sven Albrecht
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>
@@ -10,6 +11,7 @@
 #include <laser_geometry/laser_geometry.h>
 #include <visualization_msgs/Marker.h>
 #include <angles/angles.h>
+#include <numeric>
 
 ros::Publisher line_pub;
 ros::Publisher post_cloud_pub;
@@ -20,36 +22,32 @@ double theta_threshold;
 bool use_icp, use_imr, use_idc;
 tf::Transform global_transform;
 
-typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::LaserScan, sensor_msgs::LaserScan> MySyncPolicy;
+using MySyncPolicy = message_filters::sync_policies::ApproximateTime<sensor_msgs::LaserScan, sensor_msgs::LaserScan>;
 
-typedef std::pair<geometry_msgs::Point32, geometry_msgs::Point32> CorrPair;
-typedef std::vector<CorrPair> CorrVec;
+using CorrPair = std::pair<geometry_msgs::Point32, geometry_msgs::Point32>;
+using CorrVec =  std::vector<CorrPair>;
 
 laser_geometry::LaserProjection projector_;
 
-float
-sqrdDist (const geometry_msgs::Point32 &p1, const geometry_msgs::Point32 &p2)
+float sqrdDist (const geometry_msgs::Point32 &p1, const geometry_msgs::Point32 &p2)
 {
   return (p1.x - p2.x) * (p1.x - p2.x) +
     (p1.y - p2.y) * (p1.y - p2.y);
 }
 
-void
-drawLines (const CorrVec &point_correspondences,
-    visualization_msgs::Marker &lines)
+void drawLines (const CorrVec &point_correspondences, visualization_msgs::Marker &lines)
 {
-  CorrVec::const_iterator it = point_correspondences.begin ();
   lines.points.reserve (point_correspondences.size () * 2);
-  geometry_msgs::Point p;
-  while (it != point_correspondences.end ())
+  geometry_msgs::Point point;
+
+  for (const auto &p: point_correspondences)
   {
-    p.x = it->first.x;
-    p.y = it->first.y;
-    lines.points.push_back (p);
-    p.x = it->second.x;
-    p.y = it->second.y;
-    lines.points.push_back (p);
-    it++;
+    point.x = p.first.x;
+    point.y = p.first.y;
+    lines.points.push_back (point);
+    point.x = p.second.x;
+    point.y = p.second.y;
+    lines.points.push_back (point);
   }
 }
 
@@ -60,98 +58,85 @@ calcIMRCorrespondences (const sensor_msgs::PointCloud::ConstPtr &scan_cloud,
 {
   point_correspondences.clear ();
   point_correspondences.reserve (scan_cloud->points.size ());
-  
-  std::vector<geometry_msgs::Point32>::const_iterator scan_it, model_it,
-    best_it;
+  geometry_msgs::Point32 best_p;
  
-  scan_it = scan_cloud->points.begin ();
   double min_dist2;
   double p_r, m_r;
   double p_theta, m_theta;
   double dist2;
   bool got_corr;
-  while (scan_it != scan_cloud->points.end ())
+
+  for (const auto& scan_p: scan_cloud->points)
   {
     // reset variables for search
     min_dist2 = max_dist2;
     got_corr = false;
     // convert scan point to polar coords
-    p_r = sqrt (scan_it->x * scan_it->x + scan_it->y * scan_it->y);
-    p_theta = atan2 (scan_it->y, scan_it->x);
+    p_r = sqrt (scan_p.x * scan_p.x + scan_p.y * scan_p.y);
+    p_theta = atan2 (scan_p.y, scan_p.x);
     // go over all model points
-    model_it = model_cloud->points.begin ();
-    while (model_it != model_cloud->points.end ())
+    for (const auto &model_p: model_cloud->points)
     {
       // retrieve theta for the current model point
-      m_theta = atan2 (model_it->y, model_it->x);
+      m_theta = atan2 (model_p.y, model_p.x);
       // check if model point is in (angular) range
       if (fabs (angles::shortest_angular_distance (p_theta, m_theta)) < theta_threshold)
       {
         // get the range for the model point
-        m_r = sqrt (model_it->x * model_it->x + model_it->y * model_it->y);
+        m_r = sqrt (model_p.x * model_p.x + model_p.y * model_p.y);
         // get sqrd dist between model point range and scan point range
         dist2 = (p_r - m_r) * (p_r - m_r);
 
         if (dist2 < min_dist2)
         {
           min_dist2 = dist2;
-          best_it = model_it;
+          best_p = model_p;
           got_corr = true;
         }
       }
-      model_it++;
     }
     // if a correspondence was found, put it into the corr vec
     if (got_corr)
     {
-      point_correspondences.push_back (CorrPair (*best_it, *scan_it));
+      point_correspondences.push_back (CorrPair (best_p, scan_p));
     }
-    scan_it++;
   }
 }
 
 
 
-void
-calcICPCorrespondences (const sensor_msgs::PointCloud::ConstPtr &scan_cloud,
-    const sensor_msgs::PointCloud::ConstPtr &model_cloud,
-    CorrVec &point_correspondences)
+void calcICPCorrespondences (const sensor_msgs::PointCloud::ConstPtr &scan_cloud,
+                             const sensor_msgs::PointCloud::ConstPtr &model_cloud,
+                             CorrVec &point_correspondences)
 {
   // clear old contents from correspondence vector
   point_correspondences.clear ();
   point_correspondences.reserve (scan_cloud->points.size ());
   float min_dist2, curr_dist2;
   bool got_corr;
+  geometry_msgs::Point32 best_p;
 
-  std::vector<geometry_msgs::Point32>::const_iterator scan_it, model_it,
-    best_it;
-
-  scan_it = scan_cloud->points.begin ();
-  while (scan_it != scan_cloud->points.end ())
+  for (const auto &scan_p: scan_cloud->points)
   {
     min_dist2 = max_dist2;
     got_corr = false;
-    model_it = model_cloud->points.begin ();
-    while (model_it != model_cloud->points.end ())
+    for (const auto &model_p: model_cloud->points)
     {
-      curr_dist2 = sqrdDist (*scan_it, *model_it);
+      curr_dist2 = sqrdDist(scan_p, model_p);
       if (curr_dist2 < min_dist2)
       {
         min_dist2 = curr_dist2;
-        best_it = model_it;
+        best_p = model_p;
         got_corr = true;
       }
-      model_it++;
     }
-//    point_correspondences.push_back (CorrPair (*scan_it, *best_it));
+    
     if (got_corr)
     {
-      point_correspondences.push_back (CorrPair (*best_it, *scan_it));
+      point_correspondences.push_back(CorrPair (best_p, scan_p));
     }
-    scan_it++;
   }
 }
-
 
 tf::Transform
 calcTransFormation (const CorrVec &point_correspondences)
@@ -160,15 +145,13 @@ calcTransFormation (const CorrVec &point_correspondences)
   float s_xx = 0.0f, s_xy = 0.0f, s_yx = 0.0f, s_yy = 0.0f;
 
   // compute centroids
-  CorrVec::const_iterator it = point_correspondences.begin ();
-  while (it != point_correspondences.end ())
+  for (const auto &pc: point_correspondences)
   {
-    c1_x += it->first.x;
-    c1_y += it->first.y;
+    c1_x += pc.first.x;
+    c1_y += pc.first.y;
 
-    c2_x += it->second.x;
-    c2_y += it->second.y;
-    it++;
+    c2_x += pc.second.x;
+    c2_y += pc.second.y;
   }
 
   c1_x /= point_correspondences.size ();
@@ -177,16 +160,14 @@ calcTransFormation (const CorrVec &point_correspondences)
   c2_y /= point_correspondences.size ();
  
   // compute the other terms needed for error minimization (see slide 234)
-  it = point_correspondences.begin ();
-  while (it != point_correspondences.end ())
+  for (const auto &pc: point_correspondences)
   {
-    s_xx += (it->first.x - c1_x) * (it->second.x - c2_x);
-    s_xy += (it->first.x - c1_x) * (it->second.y - c2_y);
-    s_yx += (it->first.y - c1_y) * (it->second.x - c2_x);
-    s_yy += (it->first.y - c1_y) * (it->second.y - c2_y);
-    it++;
+    s_xx += (pc.first.x - c1_x) * (pc.second.x - c2_x);
+    s_xy += (pc.first.x - c1_x) * (pc.second.y - c2_y);
+    s_yx += (pc.first.y - c1_y) * (pc.second.x - c2_x);
+    s_yy += (pc.first.y - c1_y) * (pc.second.y - c2_y);
   }
-  
+
   float theta = atan2 (s_yx - s_xy, s_xx + s_yy);
   float tx = c1_x - (c2_x * cos (theta) - c2_y * sin (theta));
   float ty = c1_y - (c2_x * sin (theta) + c2_y * cos (theta));
@@ -213,21 +194,18 @@ transformPointCloud (const sensor_msgs::PointCloud::Ptr &in_cloud,
   geometry_msgs::Point32 p;
   tf::Vector3 v;
   // apply transformation to every point in in_cloud and add them to out_cloud
-  while (p_it != in_cloud->points.end ())
+  for (const auto &p_it: in_cloud->points)
   {
-    v = tf::Vector3 (p_it->x, p_it->y, p_it->z);
+    v = tf::Vector3 (p_it.x, p_it.y, p_it.z);
     v = global_transform * v;
     p.x = v[0];
     p.y = v[1];
     p.z = v[2];
     out_cloud->points.push_back (p);
-    p_it++;
   }
 }
 
-void
-laserCallback (const sensor_msgs::LaserScan::ConstPtr& scan,
-    const sensor_msgs::LaserScan::ConstPtr& model)
+void laserCallback (const sensor_msgs::LaserScan::ConstPtr& scan, const sensor_msgs::LaserScan::ConstPtr& model)
 {
   static ros::Time last = scan->header.stamp;
 
@@ -381,7 +359,7 @@ main (int argc, char **argv)
 
   message_filters::Synchronizer<MySyncPolicy> sync (MySyncPolicy (10), scan_sub, model_sub);
   sync.registerCallback (boost::bind (&laserCallback, _1, _2));
-	
+    
   line_pub = n.advertise<visualization_msgs::Marker> ("visualization_marker", 10);
   post_cloud_pub = n.advertise<sensor_msgs::PointCloud> ("post_trans_cloud", 10);
   pre_cloud_pub = n.advertise<sensor_msgs::PointCloud> ("pre_trans_cloud", 10);
