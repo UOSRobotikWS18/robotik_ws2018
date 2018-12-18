@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package>
-  <name>scanmatching</name>
+  <name>blatt7</name>
   <version>0.0.0</version>
-  <description>The scanmatching package</description>
+  <description>The blatt7 package</description>
 
   <!-- One maintainer tag required, multiple allowed, one person per tag --> 
   <!-- Example:  -->
