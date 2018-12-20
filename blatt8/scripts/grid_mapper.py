@@ -37,9 +37,11 @@ class GridMapper:
         
         xyz_array_transformed = self.transformPoints(xyz_array, pos, quat)
         
-        
         # test
-        self.publish_xyz_array(xyz_array_transformed, frame_id=target_frame)
+        out_cloud = self.numpy_array_to_pointcloud(xyz_array_transformed, frame_id=target_frame)
+        self.cloudPub.publish(out_cloud)
+        
+        
         
         xy_array_transformed = xyz_array_transformed[:,:2]
         
@@ -58,7 +60,7 @@ class GridMapper:
 
         grid_map = np.ones(nr_cells_2, dtype=np.int8) * -1
 
-        grid_map = self.fill_grid(grid_map, xy_array_transformed, min_pos, self.cell_size)
+        grid_map = self.fill_grid(grid_map, xy_array_transformed, min_pos, self.cell_size, pos)
 
         # grid_map = self.fill_grid(grid_map, xy_array_transformed)
 
@@ -75,18 +77,79 @@ class GridMapper:
         self.vis_pub.publish(oc_grid)
 
     def pointcloud_to_numpy_array(self, pointcloud):
+        """
+            Converting Pointcloud2 to Numpy Array (3,N)
+        """
         pointcloud2_array = ros_numpy.numpify(pointcloud)
         return ros_numpy.point_cloud2.get_xyz_points(pointcloud2_array)
 
-    def fill_grid(self, grid_map, xy_array_transformed, grid_min_point, grid_res):
+    def numpy_array_to_pointcloud(self, numpy_array, frame_id, stamp=None):
+        """
+            Converting Numpy Array (3,N) to Pointcloud2
+        """
+        if stamp is None:
+            stamp = rospy.Time.now()
+        out_cloud = self.xyz_array_to_pointcloud2(numpy_array, frame_id=frame_id, stamp=stamp)
+        return out_cloud
+
+    def fill_grid(self, grid_map, xy_array_transformed, grid_min_point, grid_res, my_pos):
+        
+        my_coord = self.point_to_grid(my_pos, grid_min_point, grid_res)
         grid_coords = self.points_to_grid(xy_array_transformed, grid_min_point, grid_res)
+        
+        grid_map[my_coord[1], my_coord[0]] = 0
+        
+        # BresenhamLine
+        
+        src_x = my_coord[1]
+        src_y = my_coord[0]
+
         for i in range(grid_coords.shape[0]):
             coord = grid_coords[i,:]
+
+            # Draw BresenhamLine from my_coord to coord
+            target_x = coord[1]
+            target_y = coord[0]
+
+            dx = np.abs( target_x - src_x )
+            dy = np.abs( target_y - src_y )
+            
+            if src_x < target_x:
+                sx = 1
+            else:
+                sx = -1
+
+            if src_y < target_y:
+                sy = 1
+            else:
+                sy = -1
+
+            error = dx - dy
+            x = src_x
+            y = src_y
+
+            while x != target_x or y != target_y:
+
+                if x < 0 or y < 0:
+                    continue
+
+                grid_map[int(x),int(y)] = 0
+                e2 = 2 * error
+                if e2 > -dy:
+                    error = error - dy
+                    x += sx
+                
+                if e2 < dx:
+                    error = error + dx
+                    y += sy
+            
+            # draw black line endings
             grid_map[coord[1], coord[0]] = 100
+
         return grid_map
 
     def publish_xyz_array(self, xyz_array, frame_id):
-        test_cloud = self.xyz_array_to_pointcloud2(xyz_array, frame_id=frame_id, stamp=rospy.Time.now())
+        
         self.cloudPub.publish(test_cloud)
 
     def xyz_array_to_pointcloud2(self, points, stamp=None, frame_id=None):
@@ -132,7 +195,6 @@ class GridMapper:
         """
             Transforms points. np_points.shape == (N,3)
         """
-        print(np_points.shape)
         pos = np.zeros((3,1))
         pos[0] = trans[0]
         pos[1] = trans[1]
@@ -148,7 +210,7 @@ class GridMapper:
         return np_points
 
     def point_to_grid(self, point, grid_min_point, grid_res):
-        grid_point = point - grid_min_point
+        grid_point = point[:2] - grid_min_point
         grid_coord = grid_point / grid_res
         return grid_coord.astype(int)
 
