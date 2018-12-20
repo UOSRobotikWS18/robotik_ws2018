@@ -8,12 +8,18 @@ from nav_msgs.msg import OccupancyGrid
 from laser_geometry import laser_geometry
 from tf import TransformListener
 import tf.transformations
-from tf2_sensor_msgs.tf2_sensor_msgs import do_transform_cloud
-import pcl_ros
 import ros_numpy
+
 
 class GridMapper:
     def __init__(self, cell_size=0.05, grid_size = [2000,2000] ):
+        """
+            1) Initialize a fixed sized map
+            2) Convert Laserscan to Pointcloud
+            3) Transform Pointcloud to odom_combined frame
+            4) Project Pointcloud into map
+            5) Publish Map
+        """
         self.cell_size = cell_size
         self.grid_size = np.array(grid_size)
 
@@ -24,7 +30,7 @@ class GridMapper:
         self.vis_pub = rospy.Publisher('grid_map', OccupancyGrid, queue_size=1)
         self.sub = rospy.Subscriber("/scan", LaserScan, self.laserCb, queue_size=1)
         self.cloudPub = rospy.Publisher("cloud", PointCloud2, queue_size=1)
-
+        self.current_time = rospy.Time.now()
 
     def initGrid(self):
         self.min_pos = -self.grid_size/2 * self.cell_size
@@ -66,6 +72,41 @@ class GridMapper:
         
         self.vis_pub.publish(oc_grid)
 
+        # save map if time exceeded
+        if rospy.Time.now() - self.current_time > rospy.Duration(10.0):
+            
+            self.save_map('map.pgm')
+            self.current_time = rospy.Time.now()
+            print('map saved')
+
+    def save_map(self, filename):
+
+        x_dim = self.grid_size[0]
+        y_dim = self.grid_size[1]
+        pixels = self.grid_map
+
+        fout=open(filename, 'wb')
+        pgmHeader = 'P2' + '\n' + str(y_dim) + ' ' + str(x_dim) + '\n' + str(255) +  '\n'
+        fout.write(pgmHeader)
+
+        for i in range(x_dim):
+            line = ""
+            for j in range(y_dim):
+                
+                pixel = pixels[(x_dim - 1) - i, (y_dim - 1) - j]
+                pixel_out = 128
+                if pixel == -1:
+                    pixel_out = 128
+                elif pixel == 100:
+                    pixel_out = 0
+                else:
+                    pixel_out = 255
+                line += str(pixel_out) + " "
+            line += "\n"
+            fout.write(line)
+
+        fout.close()
+        
     def pointcloud_to_numpy_array(self, pointcloud):
         """
             Converting Pointcloud2 to Numpy Array (3,N)
@@ -137,10 +178,6 @@ class GridMapper:
             grid_map[coord[1], coord[0]] = 100
 
         return grid_map
-
-    def publish_xyz_array(self, xyz_array, frame_id):
-        
-        self.cloudPub.publish(test_cloud)
 
     def xyz_array_to_pointcloud2(self, points, stamp=None, frame_id=None):
         '''
