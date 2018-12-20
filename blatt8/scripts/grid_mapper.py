@@ -13,13 +13,22 @@ import pcl_ros
 import ros_numpy
 
 class GridMapper:
-    def __init__(self):
-        self.cell_size = 0.05
+    def __init__(self, cell_size=0.05, grid_size = [2000,2000] ):
+        self.cell_size = cell_size
+        self.grid_size = np.array(grid_size)
+
+        self.initGrid()
+
         self.tf = TransformListener()
         self.lp = laser_geometry.LaserProjection()
         self.vis_pub = rospy.Publisher('grid_map', OccupancyGrid, queue_size=1)
         self.sub = rospy.Subscriber("/scan", LaserScan, self.laserCb, queue_size=1)
         self.cloudPub = rospy.Publisher("cloud", PointCloud2, queue_size=1)
+
+
+    def initGrid(self):
+        self.min_pos = -self.grid_size/2 * self.cell_size
+        self.grid_map = np.ones(self.grid_size, dtype=np.int8) * -1
 
     def laserCb(self, scan_msg):
         cloud = self.lp.projectLaser(scan_msg)
@@ -37,42 +46,23 @@ class GridMapper:
         
         xyz_array_transformed = self.transformPoints(xyz_array, pos, quat)
         
-        # test
-        out_cloud = self.numpy_array_to_pointcloud(xyz_array_transformed, frame_id=target_frame)
-        self.cloudPub.publish(out_cloud)
-        
-        
+        # test correct transformation
+        # out_cloud = self.numpy_array_to_pointcloud(xyz_array_transformed, frame_id=target_frame)
+        # self.cloudPub.publish(out_cloud)
         
         xy_array_transformed = xyz_array_transformed[:,:2]
-        
-        max_pos = np.max(xy_array_transformed, axis=0)
-        min_pos = np.min(xy_array_transformed, axis=0)
 
-        cloud_dim = max_pos - min_pos
+        self.grid_map = self.fill_grid(self.grid_map, xy_array_transformed, self.min_pos, self.cell_size, pos)
 
-        nr_cells = np.ceil(cloud_dim / self.cell_size) + 1
-        nr_cells = nr_cells.astype(int)
-
-        nr_cells_2 = nr_cells.copy()
-        nr_cells_2[0] = nr_cells[1]
-        nr_cells_2[1] = nr_cells[0]
-        # print(nr_cells)
-
-        grid_map = np.ones(nr_cells_2, dtype=np.int8) * -1
-
-        grid_map = self.fill_grid(grid_map, xy_array_transformed, min_pos, self.cell_size, pos)
-
-        # grid_map = self.fill_grid(grid_map, xy_array_transformed)
-
-        oc_grid = ros_numpy.occupancy_grid.numpy_to_occupancy_grid(grid_map)
+        oc_grid = ros_numpy.occupancy_grid.numpy_to_occupancy_grid(self.grid_map)
 
         oc_grid.header.frame_id = target_frame
         oc_grid.header.stamp = scan_msg.header.stamp
-        oc_grid.info.width = nr_cells_2[1]
-        oc_grid.info.height = nr_cells_2[0]
+        oc_grid.info.width = self.grid_size[0]
+        oc_grid.info.height = self.grid_size[1]
         oc_grid.info.resolution = self.cell_size
-        oc_grid.info.origin.position.x = min_pos[0]
-        oc_grid.info.origin.position.y = min_pos[1]
+        oc_grid.info.origin.position.x = self.min_pos[0]
+        oc_grid.info.origin.position.y = self.min_pos[1]
         
         self.vis_pub.publish(oc_grid)
 
