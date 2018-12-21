@@ -4,25 +4,24 @@ import rospy
 import numpy as np
 import laser_geometry as lg
 import tf
-from pyquaternion import Quaternion
-from sensor_msgs.msg import LaserScan, PointCloud2
-from geometry_msgs.msg import Point, Vector3
-from visualization_msgs.msg import Marker
 import ros_numpy
 import tf.transformations
 import time
-
+# from pyquaternion import Quaternion
+from sensor_msgs.msg import LaserScan, PointCloud2
+from geometry_msgs.msg import Point, Vector3
+from visualization_msgs.msg import Marker
 
 class ICP:
     """
     Class that performs ICP
     """
 
-    def __init__(self):
+    def __init__(self, laser_frame='scanner', base_frame='base_footprint', corr_window_size=5):
 
         self.laser_frame = 'scanner'
         self.base_frame = 'base_footprint'
-
+        self.corr_window_size = corr_window_size
         self.tf = tf.TransformListener()
 
         t = None
@@ -55,7 +54,6 @@ class ICP:
             return
 
         curr_pcl = self.laser_to_2dcloud(scan_msg)
-        # Do some stuff
 
         # find correspondences
         correspondences = self.find_correspondences(curr_pcl, self.past_pcl)
@@ -80,7 +78,7 @@ class ICP:
         self.tf_broadcaster.sendTransform(self.pos,
                                           self.rot,
                                           scan_msg.header.stamp,
-                                          "base_footprint",
+                                          self.base_frame,
                                           "odom_combined")
 
         self.past_pcl = curr_pcl
@@ -88,27 +86,34 @@ class ICP:
         print('elapsed calc time: %f' % elapsed_time)
 
     def find_correspondences(self, past_pcl, curr_pcl):
-        # TODO: implement good
+        # TODO: correspondences 1D
 
         N_curr = curr_pcl.shape[0]
         N_past = past_pcl.shape[0]
 
-        N_smaller = N_curr
+        N_smaller = min(N_curr, N_past)
 
-        if N_past < N_curr:
-            N_smaller = N_past
+        N = 2
+        correspondences = np.zeros((2,N_smaller-(2*N)+1), dtype=int)
 
-        correspondences = np.zeros((2,N_smaller), dtype=int)
-        correspondences[0,:] = np.arange(N_smaller)
-        correspondences[1,:] = np.arange(N_smaller)
+        iteration = 0
+        for i in range(N, N_smaller - N+1):
+            past_point = past_pcl[i]
+            corr_slice = curr_pcl[i-N:i+N]
+            distances = [distance(past_point, curr_p) for curr_p in corr_slice]
+            corr_index = np.argmin(distances)+iteration
+            correspondences[0,iteration] = corr_index
+            iteration += 1
 
+        correspondences[1,:] = correspondences[0,:]
         return correspondences
                     
     def find_transformation(self, past_pcl, curr_pcl, correspondences):
-
         N = correspondences.shape[1]
 
         A = np.zeros((N*2, 6))
+
+        # print "trans:", trans, "rot", theta[0]
         b = np.zeros((N*2, 1))
 
         # fill A
@@ -133,10 +138,18 @@ class ICP:
 
         trans = np.array([x[2], x[5]])
 
-        theta = np.arcsin(-x[1])
+        # arcsin kann glaube ich oft fehlschlagen...die maximalen werte sind da -1,..,1,
+        # aber durch rundungsfehler kann da mal 1.00000023 stehen -> error
+        # zB np.round(-x[1], 4)
+        theta = np.arcsin(-x[1]) 
 
         return trans, theta[0]
- 
+    
+    def distance(self, p, q):
+        """
+        Euclidean distance for point in 2d space
+        """
+        return np.sqrt((q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2)
 
     def laser_to_2dcloud(self, scan_msg):
         cloud = self.lp.projectLaser(scan_msg)
