@@ -24,4 +24,23 @@ Linienerkennung in Punktwolken:
   <li>Online-Linienerkennung</li>
 </ol>
 
+## blatt5:
+Einführung in die Bilderverarbeitung. Visualisierung von verschiedenen Bildfaltungen.
+
+## blatt6:
+Sensordatenfusion zur Lokalisierung ohne Karte.
+<ol>
+  <li>Gazebo-Simulation starten</li>
+  <li>Kalman Filter für Poseschätzung mit Odometrie und IMU Daten</li>
+</ol>
+
+## blatt7:
+Scanmatching (ICP) zur zusätzlichen Verbesserung der Poseschätzung.
+
+## blatt8:
+Naive Kartierung
+
+## blatt9:
+Autonome Roboterfahrt ohne Karte mit dem FreeSpace-Algorithmus.
+
 
