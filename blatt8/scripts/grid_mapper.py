@@ -9,6 +9,7 @@ from laser_geometry import laser_geometry
 from tf import TransformListener
 import tf.transformations
 import ros_numpy
+import time
 
 
 class GridMapper:
@@ -37,18 +38,25 @@ class GridMapper:
         self.grid_map = np.ones(self.grid_size, dtype=np.int8) * -1
 
     def laserCb(self, scan_msg):
-        cloud = self.lp.projectLaser(scan_msg)
+        # print('laser')
 
-        xyz_array = self.pointcloud_to_numpy_array(cloud)
+        start = time.time()
         
+
         src_frame = scan_msg.header.frame_id
         target_frame = 'odom_combined'
 
+        # print('tf transform')
         try:
             pos, quat = self.getCurrentTransformation(target_frame, src_frame)
         except Exception as a:
             print(a)
             return
+
+        # print('converting pcl')
+        cloud = self.lp.projectLaser(scan_msg)
+
+        xyz_array = self.pointcloud_to_numpy_array(cloud)
         
         xyz_array_transformed = self.transformPoints(xyz_array, pos, quat)
         
@@ -58,6 +66,8 @@ class GridMapper:
         
         xy_array_transformed = xyz_array_transformed[:,:2]
 
+
+        # print('fill grid')
         self.grid_map = self.fill_grid(self.grid_map, xy_array_transformed, self.min_pos, self.cell_size, pos)
 
         oc_grid = ros_numpy.occupancy_grid.numpy_to_occupancy_grid(self.grid_map)
@@ -70,7 +80,14 @@ class GridMapper:
         oc_grid.info.origin.position.x = self.min_pos[0]
         oc_grid.info.origin.position.y = self.min_pos[1]
         
+        # print('publish grid')
         self.vis_pub.publish(oc_grid)
+
+        end = time.time()
+        ellapsed = end - start
+
+        print('ellapsed time:')
+        print(ellapsed)
 
         # save map if time exceeded
         if rospy.Time.now() - self.current_time > rospy.Duration(10.0):
@@ -159,7 +176,7 @@ class GridMapper:
             x = src_x
             y = src_y
 
-            while x != target_x or y != target_y:
+            while x != target_x and y != target_y:
 
                 if x < 0 or y < 0:
                     continue
@@ -251,7 +268,7 @@ class GridMapper:
 def node():
     rospy.init_node('grid_mapper_py')
 
-    gm = GridMapper()
+    gm = GridMapper(cell_size=0.15, grid_size=[400,400])
     
     rospy.spin()
 
