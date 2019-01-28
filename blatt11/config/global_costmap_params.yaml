@@ -1,0 +1,13 @@
+global_costmap:
+  update_frequency: 10
+  static_map: true
+  plugins:
+  - name: static_map
+    type: "costmap_2d::StaticLayer"
+  - name: inflation
+    type: "costmap_2d::InflationLayer"
+
+  inflation_layer:
+    cost_scaling_factor: 4.0
+    enabled: true
+    inflation_radius: 1.0

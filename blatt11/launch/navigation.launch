@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<launch>
+
+<!-- EKF -->
+<include file="$(find blatt11)/launch/ekf.launch" />
+
+<!-- Map Server -->
+<include file="$(find blatt11)/launch/map_server.launch" />
+
+<!-- Run AMCL -->
+<include file="$(find blatt11)/launch/amcl.launch" />
+
+<!-- Move Base Flex -->
+<include file="$(find blatt11)/launch/move_base_flex.launch" />
+
+<!-- Move Base Flex smach (process input from rviz) -->
+<node pkg="blatt11" type="mbf_state_machine.py" name="mbf_state_machine" output="screen"/>
+
+</launch>

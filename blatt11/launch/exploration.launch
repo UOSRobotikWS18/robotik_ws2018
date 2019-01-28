@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+
+<!-- EKF -->
+<include file="$(find blatt11)/launch/ekf.launch" />
+
+<!-- Gmapping -->
+<include file="$(find blatt11)/launch/gmapping.launch" />
+
+<!-- Exploration -->
+<node pkg="blatt9" type="freespace.py" name="freespace" />
+
+</launch>
